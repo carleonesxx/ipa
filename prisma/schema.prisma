@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "mysql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(uuid())
+  email String @unique
+  passwordHash String
+    name String
+    avatarUrl String? @db.LongText
+  age Int?
+  goal String?
+  units String @default("metric")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  settings UserSettings?
+  meals Meal[]
+  water WaterEntry[]
+  activity ActivityEntry[]
+  sleep SleepEntry[]
+  goals Goal[]
+  habits Habit[]
+  habitEntries HabitEntry[]
+  favorites RecipeFavorite[]
+  integrations Integration[]
+  sessions Session[]
+  subscriptions Subscription[]
+  shoppingLists ShoppingList[]
+  mealPlans MealPlan[]
+}
+model UserSettings {
+  id String @id @default(uuid())
+  userId String @unique
+  theme String @default("system")
+  language String @default("ru")
+  units String @default("metric")
+  notifications Json
+  privacy Json
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model Food {
+  id String @id @default(uuid())
+  name String
+  barcode String? @unique
+  kcal Float @default(0)
+  protein Float @default(0)
+  fat Float @default(0)
+  carbs Float @default(0)
+  fiber Float @default(0)
+  unit String
+  meals MealItem[]
+  mealPlanItems MealPlanItem[]
+  createdAt DateTime @default(now())
+  @@index([name])
+}
+model Meal {
+  id String @id @default(uuid())
+  userId String
+  type String
+  date DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items MealItem[]
+  @@index([userId, date])
+}
+model MealItem {
+  id String @id @default(uuid())
+  mealId String
+  foodId String
+  quantity Float @default(1)
+  meal Meal @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  food Food @relation(fields: [foodId], references: [id])
+}
+model Recipe {
+  id String @id @default(uuid())
+  name String
+  description String?
+  minutes Int @default(0)
+  kcal Float @default(0)
+  ingredients Json
+  instructions Json
+  tags Json
+  favorites RecipeFavorite[]
+  mealPlanItems MealPlanItem[]
+}
+model RecipeFavorite {
+  id String @id @default(uuid())
+  userId String
+  recipeId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipe Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  @@unique([userId, recipeId])
+}
+model Goal {
+  id String @id @default(uuid())
+  userId String
+  title String
+  target String
+  type String @default("custom")
+  status String @default("active")
+  deadline DateTime?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progress GoalProgress[]
+}
+model GoalProgress {
+  id String @id @default(uuid())
+  goalId String
+  value Float @default(0)
+  date DateTime @default(now())
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+}
+model Habit {
+  id String @id @default(uuid())
+  userId String
+  title String
+  target String?
+  active Boolean @default(true)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries HabitEntry[]
+}
+model HabitEntry {
+  id String @id @default(uuid())
+  userId String
+  habitId String
+  date DateTime @default(now())
+  completed Boolean @default(false)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  @@unique([habitId, date])
+}
+model WaterEntry {
+  id String @id @default(uuid())
+  userId String
+  amount Float
+  date DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model ActivityEntry {
+  id String @id @default(uuid())
+  userId String
+  steps Int @default(0)
+  distance Float @default(0)
+  activeMinutes Int @default(0)
+  type String?
+  duration Int?
+  source String @default("manual")
+  date DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model SleepEntry {
+  id String @id @default(uuid())
+  userId String
+  durationMinutes Int
+  source String @default("manual")
+  date DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model MealPlan {
+  id String @id @default(uuid())
+  userId String
+  date DateTime
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items MealPlanItem[]
+  @@unique([userId, date])
+}
+model MealPlanItem {
+  id String @id @default(uuid())
+  mealPlanId String
+  recipeId String?
+  foodId String?
+  type String
+  mealPlan MealPlan @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  recipe Recipe? @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  food Food? @relation(fields: [foodId], references: [id], onDelete: SetNull)
+}
+model ShoppingList {
+  id String @id @default(uuid())
+  userId String
+  name String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items ShoppingItem[]
+}
+model ShoppingItem {
+  id String @id @default(uuid())
+  listId String
+  name String
+  quantity Float @default(1)
+  unit String?
+  purchased Boolean @default(false)
+  list ShoppingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+}
+model Integration {
+  id String @id @default(uuid())
+  userId String
+  provider String
+  status String @default("not_connected")
+  externalUserId String?
+  connectedAt DateTime?
+  lastSyncAt DateTime?
+  metadata Json?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, provider])
+}
+model Session {
+  id String @id @default(uuid())
+  userId String
+  tokenHash String @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id String @id @default(uuid())
+  userId String
+  plan String
+  status String @default("active")
+  provider String @default("stripe")
+  externalId String?
+  currentPeriodEnd DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, status])
+  @@unique([provider, externalId])
+}

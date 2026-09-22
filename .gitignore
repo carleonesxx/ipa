@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.pnpm-store/
+.env
+server/data.json
+ios/build
+ios/DerivedData
+*.xcuserstate
+*.ipa
+*.p12
+*.mobileprovision
+*.cer
+*.p8
+*.xcarchive
+ExportOptions.plist

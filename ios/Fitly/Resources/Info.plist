@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDisplayName</key><string>FITLY</string>
+<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+<key>CFBundleName</key><string>FITLY</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>FITLY_API_BASE_URL</key><string>$(FITLY_API_BASE_URL)</string>
+<key>LSApplicationQueriesSchemes</key><array><string>fitly</string></array>
+<key>NSCameraUsageDescription</key><string>FITLY использует камеру для распознавания блюд.</string>
+<key>NSPhotoLibraryUsageDescription</key><string>FITLY использует фотографии для сканера еды и аватара.</string>
+<key>NSHealthShareUsageDescription</key><string>FITLY читает шаги, активность и сон, чтобы показать ваш реальный прогресс.</string>
+<key>NSHealthUpdateUsageDescription</key><string>FITLY не записывает данные в Apple Health без вашего действия.</string>
+<key>NSUserNotificationsUsageDescription</key><string>FITLY отправляет локальные напоминания о воде, еде и привычках.</string>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLSchemes</key><array><string>fitly</string></array></dict></array>
+</dict></plist>

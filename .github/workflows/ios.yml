@@ -1,0 +1,160 @@
+name: FITLY iOS
+
+on:
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+    inputs:
+      distribute:
+        description: 'Archive, export IPA and upload to TestFlight'
+        required: true
+        default: false
+        type: boolean
+
+env:
+  PROJECT: ios/Fitly.xcodeproj
+  SCHEME: Fitly
+  DERIVED_DATA: ${{ github.workspace }}/ios/DerivedData
+
+jobs:
+  validate:
+    name: Validate and test (unsigned)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+      - name: Inspect project
+        run: xcodebuild -project "$PROJECT" -scheme "$SCHEME" -list
+      - name: Build simulator
+        run: >-
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME"
+          -sdk iphonesimulator -configuration Debug
+          -destination 'platform=iOS Simulator,name=iPhone 15'
+          -derivedDataPath "$DERIVED_DATA"
+          FITLY_API_BASE_URL=http://127.0.0.1:4000/api
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Run unit tests
+        run: >-
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME"
+          -sdk iphonesimulator -configuration Debug
+          -destination 'platform=iOS Simulator,name=iPhone 15'
+          -derivedDataPath "$DERIVED_DATA"
+          CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test
+
+  release:
+    name: Archive, export and TestFlight
+    if: github.event_name == 'workflow_dispatch' && inputs.distribute == true
+    needs: validate
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+      - name: Check signing secrets
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_ISSUER_ID }}
+          API_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY_BASE64 }}
+          CERT: ${{ secrets.SIGNING_CERTIFICATE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+          PROFILE: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+          PROFILE_NAME: ${{ secrets.IOS_PROFILE_NAME }}
+          BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+          PRODUCTION_API: ${{ secrets.IOS_PRODUCTION_API_URL }}
+        run: |
+          missing=()
+          for pair in TEAM KEY_ID ISSUER API_KEY CERT CERT_PASSWORD PROFILE PROFILE_NAME BUNDLE_ID PRODUCTION_API; do
+            if [ -z "${!pair}" ]; then missing+=("$pair"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "Apple signing credentials are not configured: ${missing[*]}" >&2
+            exit 1
+          fi
+      - name: Install signing materials
+        env:
+          CERT: ${{ secrets.SIGNING_CERTIFICATE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+          PROFILE: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/fitly-signing.keychain-db"
+          security create-keychain -p "fitly-ci" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "fitly-ci" "$KEYCHAIN"
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security import "$RUNNER_TEMP/signing.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN"
+          echo "$PROFILE" | base64 --decode > "$RUNNER_TEMP/fitly.mobileprovision"
+          UUID=$(security cms -D -i "$RUNNER_TEMP/fitly.mobileprovision" | plutil -extract UUID raw -o - -)
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/fitly.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+      - name: Prepare App Store Connect API key
+        env:
+          KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_ISSUER_ID }}
+          PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY_BASE64 }}
+        run: |
+          echo "$PRIVATE_KEY" | base64 --decode > "$RUNNER_TEMP/AuthKey_${KEY_ID}.p8"
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          cp "$RUNNER_TEMP/AuthKey_${KEY_ID}.p8" "$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
+      - name: Archive
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+          PROFILE_NAME: ${{ secrets.IOS_PROFILE_NAME }}
+          KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_ISSUER_ID }}
+        run: >-
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release
+          -destination generic/platform=iOS
+          -archivePath "$RUNNER_TEMP/FITLY.xcarchive"
+          -derivedDataPath "$DERIVED_DATA"
+          FITLY_API_BASE_URL=${{ secrets.IOS_PRODUCTION_API_URL }}
+          PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+          DEVELOPMENT_TEAM="$TEAM"
+          CODE_SIGN_STYLE=Manual
+          PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+          CODE_SIGN_IDENTITY="Apple Distribution"
+          -authenticationKeyPath "$RUNNER_TEMP/AuthKey_${KEY_ID}.p8"
+          -authenticationKeyID "$KEY_ID"
+          -authenticationKeyIssuerID "$ISSUER" archive
+      - name: Export IPA
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+          PROFILE_NAME: ${{ secrets.IOS_PROFILE_NAME }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>method</key><string>app-store</string>
+          <key>signingStyle</key><string>manual</string>
+          <key>teamID</key><string>$TEAM</string>
+          <key>provisioningProfiles</key><dict><key>$BUNDLE_ID</key><string>$PROFILE_NAME</string></dict>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/FITLY.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export"
+          test -f "$RUNNER_TEMP/export/Fitly.ipa"
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          ISSUER: ${{ secrets.APPLE_ISSUER_ID }}
+        run: >-
+          xcrun iTMSTransporter -m upload
+          -assetFile "$RUNNER_TEMP/export/Fitly.ipa"
+          -apiKey "$KEY_ID"
+          -apiIssuer "$ISSUER"
+      - name: Publish IPA and archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: FITLY-release
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/export/Fitly.ipa
+            ${{ runner.temp }}/FITLY.xcarchive
