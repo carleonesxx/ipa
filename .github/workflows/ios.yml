@@ -19,14 +19,10 @@ env:
 jobs:
   validate:
     name: Validate and test (unsigned)
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.2'
-      - name: Diagnose Xcode and select an available iPhone Simulator
+      - name: Diagnose latest Xcode and install current iOS Simulator runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -34,7 +30,7 @@ jobs:
           echo "Runner architecture: $(uname -m)"
           xcodebuild -showsdks
           xcrun simctl list runtimes
-          xcodebuild -downloadPlatform iOS -buildVersion 18.2
+          xcodebuild -downloadPlatform iOS
           xcrun simctl list runtimes
           xcrun simctl list devices available
           xcodebuild -project "$PROJECT" -scheme "$SCHEME" -list
@@ -78,13 +74,9 @@ jobs:
     name: Archive, export and TestFlight
     if: github.event_name == 'workflow_dispatch' && inputs.distribute == true
     needs: validate
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.2'
       - name: Check signing secrets
         env:
           TEAM: ${{ secrets.APPLE_TEAM_ID }}
