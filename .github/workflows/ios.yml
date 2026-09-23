@@ -34,6 +34,8 @@ jobs:
           echo "Runner architecture: $(uname -m)"
           xcodebuild -showsdks
           xcrun simctl list runtimes
+          xcodebuild -downloadPlatform iOS -buildVersion 18.2
+          xcrun simctl list runtimes
           xcrun simctl list devices available
           xcodebuild -project "$PROJECT" -scheme "$SCHEME" -list
           destinations="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphonesimulator -showdestinations)"
