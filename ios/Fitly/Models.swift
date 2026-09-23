@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 struct User: Codable, Identifiable, Equatable {
     let id: String
