@@ -37,7 +37,23 @@ jobs:
           destinations="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphonesimulator -showdestinations)"
           printf '%s\n' "$destinations"
 
-          simulator_id="$(sed -nE 's/.*platform:iOS Simulator,.*id:([^,]+),.*name:(iPhone[^}]*)}.*/\1/p' <<< "$destinations" | head -n 1)"
+          latest_destination="$(python3 - "$destinations" <<'PY'
+          import re
+          import sys
+
+          candidates = []
+          for line in sys.argv[1].splitlines():
+              match = re.search(r'platform:iOS Simulator,.*?id:([^,]+), OS:([0-9.]+), name:(iPhone[^}]*)', line)
+              if match:
+                  version = tuple(int(part) for part in match.group(2).split('.'))
+                  candidates.append((version, match.group(1), match.group(2), match.group(3)))
+
+          if candidates:
+              _, simulator_id, os_version, device_name = max(candidates)
+              print(f'{simulator_id} {os_version} {device_name}')
+          PY
+          )"
+          read -r simulator_id simulator_os simulator_name <<< "$latest_destination"
           if [[ -z "$simulator_id" ]]; then
             echo "No concrete iPhone Simulator destination is available for scheme $SCHEME and the iOS Simulator SDK on this runner." >&2
             exit 1
@@ -46,7 +62,7 @@ jobs:
             echo "xcodebuild destination is not an available simulator device: $simulator_id" >&2
             exit 1
           fi
-          echo "Selected iPhone Simulator UDID: $simulator_id"
+          echo "Selected newest iPhone Simulator: $simulator_name (iOS $simulator_os, $simulator_id)"
           echo "SIMULATOR_UDID=$simulator_id" >> "$GITHUB_ENV"
       - name: Resolve Swift package dependencies
         run: xcodebuild -resolvePackageDependencies -project "$PROJECT" -scheme "$SCHEME"
