@@ -21,10 +21,152 @@ private struct ScanResult: Decodable { let name: String; let portion: String; le
 struct CoachView: View { @EnvironmentObject private var session: SessionStore; @State private var text = ""; @State private var messages: [String] = []; var body: some View { VStack { ScrollView { LazyVStack(alignment: .leading, spacing: 10) { ForEach(messages, id: \.self) { Text($0).padding(12).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14)) } } }.frame(maxWidth: .infinity); HStack { TextField("Спросите о своём дне", text: $text); Button { let q = text; text = ""; Task { do { let response: AIMessageResponse = try await session.api.request("/ai/coach", method: "POST", body: MessageBody(message: q)); messages.append("Вы: \(q)"); messages.append("FITLY AI: \(response.message)") } catch { messages.append(error.localizedDescription) } } } label: { Image(systemName: "arrow.up.circle.fill") } }.padding().background(.thinMaterial, in: Capsule()) }.padding().navigationTitle("FITLY AI") } }
 private struct MessageBody: Encodable { let message: String }
 
-struct PlannerView: View { @EnvironmentObject private var session: SessionStore; @State private var plans: [MealPlan] = []; var body: some View { List { ForEach(plans) { plan in Section(plan.date) { ForEach(plan.items) { item in HStack { Text(item.type.capitalized); Spacer(); Text(item.recipe?.name ?? item.food?.name ?? "Блюдо") } } } } Button("Добавить план на сегодня") { Task { try? await session.api.request("/meal-plans", method: "POST", body: PlanBody(date: ISO8601DateFormatter().string(from: Date()), type: "snack")); await load() } } }.navigationTitle("Планировщик").task { await load() }; private func load() async { plans = (try? await session.api.request("/meal-plans") as MealPlanList)?.items ?? [] } }
+struct PlannerView: View {
+    @EnvironmentObject private var session: SessionStore
+    @State private var plans: [MealPlan] = []
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            if let errorMessage {
+                Text(errorMessage).foregroundStyle(.red)
+            }
+            ForEach(plans) { plan in
+                Section(plan.date) {
+                    ForEach(plan.items) { item in
+                        HStack {
+                            Text(item.type.capitalized)
+                            Spacer()
+                            Text(item.recipe?.name ?? item.food?.name ?? "Блюдо")
+                        }
+                    }
+                }
+            }
+            Button("Добавить план на сегодня") {
+                Task {
+                    do {
+                        let body = PlanBody(date: ISO8601DateFormatter().string(from: Date()), type: "snack")
+                        let _: EmptyResponse = try await session.api.request("/meal-plans", method: "POST", body: body)
+                        await load()
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                }
+            }
+        }
+        .navigationTitle("Планировщик")
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            let response: MealPlanList = try await session.api.request("/meal-plans")
+            plans = response.items
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
 private struct PlanBody: Encodable { let date: String; let type: String }
 
-struct ShoppingView: View { @EnvironmentObject private var session: SessionStore; @State private var lists: [ShoppingList] = []; @State private var newItemName = ""; var body: some View { List { ForEach(lists) { list in Section(list.name) { ForEach(list.items) { item in Button { Task { try? await session.api.request("/shopping-lists/\(list.id)/items/\(item.id)", method: "PATCH", body: PurchasedBody(purchased: !item.purchased)); await load() } } label: { Label(item.name, systemImage: item.purchased ? "checkmark.circle.fill" : "circle") } }; HStack { TextField("Название товара", text: $newItemName); Button("Добавить") { let name = newItemName.trimmingCharacters(in: .whitespacesAndNewlines); guard !name.isEmpty else { return }; Task { try? await session.api.request("/shopping-lists/\(list.id)/items", method: "POST", body: ShoppingItemBody(name: name, quantity: 1)); newItemName = ""; await load() } }.disabled(newItemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } } }; Button("Создать список") { Task { try? await session.api.request("/shopping-lists", method: "POST", body: ListBody(name: "Покупки")); await load() } } }.navigationTitle("Покупки").task { await load() }; private func load() async { lists = (try? await session.api.request("/shopping-lists") as ShoppingListResponse)?.items ?? [] } }
+struct ShoppingView: View {
+    @EnvironmentObject private var session: SessionStore
+    @State private var lists: [ShoppingList] = []
+    @State private var newItemName = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            if let errorMessage {
+                Text(errorMessage).foregroundStyle(.red)
+            }
+            ForEach(lists) { list in
+                Section(list.name) {
+                    ForEach(list.items) { item in
+                        Button {
+                            Task {
+                                do {
+                                    let body = PurchasedBody(purchased: !item.purchased)
+                                    let _: EmptyResponse = try await session.api.request("/shopping-lists/\(list.id)/items/\(item.id)", method: "PATCH", body: body)
+                                    await load()
+                                } catch {
+                                    errorMessage = error.localizedDescription
+                                }
+                            }
+                        } label: {
+                            Label(item.name, systemImage: item.purchased ? "checkmark.circle.fill" : "circle")
+                        }
+                    }
+                    HStack {
+                        TextField("Название товара", text: $newItemName)
+                        Button("Добавить") {
+                            let name = newItemName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !name.isEmpty else { return }
+                            Task {
+                                do {
+                                    let body = ShoppingItemBody(name: name, quantity: 1)
+                                    let _: EmptyResponse = try await session.api.request("/shopping-lists/\(list.id)/items", method: "POST", body: body)
+                                    newItemName = ""
+                                    await load()
+                                } catch {
+                                    errorMessage = error.localizedDescription
+                                }
+                            }
+                        }
+                        .disabled(newItemName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+            Button("Создать список") {
+                Task {
+                    do {
+                        let _: EmptyResponse = try await session.api.request("/shopping-lists", method: "POST", body: ListBody(name: "Покупки"))
+                        await load()
+                    } catch {
+                        errorMessage = error.localizedDescription
+                    }
+                }
+            }
+        }
+        .navigationTitle("Покупки")
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            let response: ShoppingListResponse = try await session.api.request("/shopping-lists")
+            lists = response.items
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
 private struct ListBody: Encodable { let name: String }; private struct ShoppingItemBody: Encodable { let name: String; let quantity: Double }; private struct PurchasedBody: Encodable { let purchased: Bool }
 
-struct CameraPicker: UIViewControllerRepresentable { @Binding var imageData: Data?; func makeCoordinator() -> Coordinator { Coordinator(self) }; func makeUIViewController(context: Context) -> UIImagePickerController { let picker = UIImagePickerController(); picker.sourceType = .camera; picker.delegate = context.coordinator; return picker }; func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {} final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate { let parent: CameraPicker; init(_ parent: CameraPicker) { self.parent = parent }; func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) { if let image = info[.originalImage] as? UIImage { parent.imageData = image.jpegData(compressionQuality: 0.82) }; picker.dismiss(animated: true) } } }
+struct CameraPicker: UIViewControllerRepresentable {
+    @Binding var imageData: Data?
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let parent: CameraPicker
+
+        init(_ parent: CameraPicker) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.imageData = image.jpegData(compressionQuality: 0.82)
+            }
+            picker.dismiss(animated: true)
+        }
+    }
+}
