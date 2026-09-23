@@ -32,19 +32,20 @@ jobs:
           set -euo pipefail
           xcodebuild -version
           echo "Runner architecture: $(uname -m)"
+          xcodebuild -showsdks
+          xcrun simctl list runtimes
           xcrun simctl list devices available
           xcodebuild -project "$PROJECT" -scheme "$SCHEME" -list
-          destinations="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations)"
+          destinations="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -sdk iphonesimulator -showdestinations)"
           printf '%s\n' "$destinations"
 
-          simulator_id="$(xcrun simctl list devices available --json \
-            | jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))][0].udid // empty')"
+          simulator_id="$(sed -nE 's/.*platform:iOS Simulator,.*id:([^,]+),.*name:(iPhone[^}]*)}.*/\1/p' <<< "$destinations" | head -n 1)"
           if [[ -z "$simulator_id" ]]; then
-            echo "No available iPhone Simulator was found on this runner." >&2
+            echo "No concrete iPhone Simulator destination is available for scheme $SCHEME and the iOS Simulator SDK on this runner." >&2
             exit 1
           fi
-          if ! grep -Fq "$simulator_id" <<< "$destinations"; then
-            echo "The selected iPhone Simulator is not a destination for scheme $SCHEME: $simulator_id" >&2
+          if ! xcrun simctl list devices available --json | jq -e --arg id "$simulator_id" '[.devices[][] | select(.isAvailable == true and .udid == $id)] | length > 0' >/dev/null; then
+            echo "xcodebuild destination is not an available simulator device: $simulator_id" >&2
             exit 1
           fi
           echo "Selected iPhone Simulator UDID: $simulator_id"
