@@ -15,12 +15,12 @@ actor FITLYAPIClient {
 
     func request<T: Decodable>(_ path: String, method: String = "GET", body: Encodable? = nil, retry: Bool = true) async throws -> T {
         let suffix = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        var request = URLRequest(url: URL(string: baseURL.absoluteString + "/" + suffix)!)
-        request.httpMethod = method; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        if let body { request.httpBody = try JSONEncoder().encode(AnyEncodable(body)) }
+        var urlRequest = URLRequest(url: URL(string: baseURL.absoluteString + "/" + suffix)!)
+        urlRequest.httpMethod = method; urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token { urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let body { urlRequest.httpBody = try JSONEncoder().encode(AnyEncodable(body)) }
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: urlRequest)
             guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
             if http.statusCode == 401, retry, token != nil { try await refresh(); return try await request(path, method: method, body: body, retry: false) }
             guard (200..<300).contains(http.statusCode) else { let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]; throw APIError.message(payload?["error"] as? String ?? "Ошибка API (\(http.statusCode))") }
@@ -31,7 +31,7 @@ actor FITLYAPIClient {
     func refresh() async throws { guard token != nil else { throw APIError.unauthorized }; let response: AuthResponse = try await request("/auth/refresh", method: "POST", retry: false); setToken(response.token) }
     func login(email: String, password: String) async throws -> AuthResponse { let r: AuthResponse = try await request("/auth/login", method: "POST", body: Credentials(email: email, password: password), retry: false); setToken(r.token); return r }
     func register(name: String, email: String, password: String) async throws -> AuthResponse { let r: AuthResponse = try await request("/auth/register", method: "POST", body: RegisterBody(name: name, email: email, password: password), retry: false); setToken(r.token); return r }
-    func logout() async { try? await request("/auth/logout", method: "POST", retry: false); setToken(nil) }
+    func logout() async { let _: EmptyResponse? = try? await request("/auth/logout", method: "POST", retry: false); setToken(nil) }
 }
 
 struct EmptyResponse: Decodable {}
